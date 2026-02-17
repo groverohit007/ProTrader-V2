@@ -1,9 +1,9 @@
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from v2_backend.schemas import AlertRequest
-from v2_backend.services.price_stream import simulator
-from v2_backend.services.store import store
+from schemas import AlertRequest
+from price_stream import simulator
+from store import store
 
 router = APIRouter(prefix="/market", tags=["market"])
 

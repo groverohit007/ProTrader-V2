@@ -1,13 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from v2_backend.routers.market import router as market_router
-from v2_backend.routers.predictions import router as pred_router
-from v2_backend.routers.strategy import router as strategy_router
-from v2_backend.routers.broker import router as broker_router
-from v2_backend.routers.portfolio import router as portfolio_router
-from v2_backend.routers.news import router as news_router
-from v2_backend.routers.org import router as org_router
+from market import router as market_router
+from predictions import router as pred_router
+from strategy import router as strategy_router
+from broker import router as broker_router
+from portfolio import router as portfolio_router
+from news import router as news_router
+from org import router as org_router
 
 app = FastAPI(
     title="StockMind-AI v2 API",
