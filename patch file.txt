@@ -1,0 +1,1263 @@
+diff --git a/EXPORT_FOR_GITHUB.md b/EXPORT_FOR_GITHUB.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a3a9798adf4a5afa2751ceee68abe770aa176746
+--- /dev/null
++++ b/EXPORT_FOR_GITHUB.md
+@@ -0,0 +1,43 @@
++# Export Full Code Package for GitHub
++
++If you want to download **all source files** from this tool and upload to your GitHub repo, use the script below.
++
++## 1) Create a full-code bundle
++
++```bash
++bash scripts/create_full_repo_bundle.sh
++```
++
++This generates:
++- `StockMind-AI_full_code_<timestamp>.zip` → full project bundle
++- `StockMind-AI_manifest_<timestamp>.txt` → file list in bundle
++- `StockMind-AI_checksums_<timestamp>.txt` → SHA256 checksum
++
++## 2) Verify the package
++
++```bash
++sha256sum -c StockMind-AI_checksums_<timestamp>.txt
++```
++
++## 3) Upload to GitHub
++
++Option A (GitHub web):
++1. Extract zip locally.
++2. Open your GitHub repository.
++3. Use **Add file → Upload files**.
++4. Drag all extracted files and commit.
++
++Option B (Git command line):
++
++```bash
++git clone <your-repo-url>
++cd <your-repo-folder>
++cp -r /path/to/extracted/StockMind-AI/* .
++git add .
++git commit -m "Add full StockMind-AI codebase"
++git push
++```
++
++## Notes
++- The bundle intentionally excludes `.git`, `__pycache__`, `.db`, virtual environments, and old zip artifacts.
++- Re-run the script anytime to regenerate a clean package.
+diff --git a/V2_BACKEND_GUIDE.md b/V2_BACKEND_GUIDE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d2b3ebde6f92d465198fa48734cf5ac4537042b
+--- /dev/null
++++ b/V2_BACKEND_GUIDE.md
+@@ -0,0 +1,54 @@
++# StockMind-AI v2 Backend
++
++This repository now includes a **mobile-ready FastAPI backend** under `v2_backend/` that extends current app capabilities.
++
++## Included v2 features
++
++1. **Live websocket prices + alerts**
++   - `GET /market/quote/{symbol}`
++   - `POST /market/alerts`
++   - `GET /market/alerts/check/{symbol}`
++   - `WS /market/ws/prices/{symbol}`
++
++2. **Explainable AI predictions**
++   - `POST /predictions/explain`
++   - Returns signal, confidence, probabilities, and per-feature contribution values.
++
++3. **Strategy builder + walk-forward optimization**
++   - `POST /strategy/walk-forward`
++   - Runs MA-crossover strategy walk-forward splits and reports return/sharpe/max drawdown.
++
++4. **Broker integration (paper/live)**
++   - `POST /broker/orders` (paper supported, live returns 501 placeholder)
++   - `GET /broker/positions/{user_id}`
++
++5. **Portfolio risk analytics**
++   - `POST /portfolio/risk`
++   - Computes VaR(95), beta, sector exposure.
++
++6. **News/sentiment with event impact**
++   - `POST /news/impact`
++   - Scores sentiment and event-weighted impact per headline.
++
++7. **Multi-user org/team dashboards + audit logs**
++   - `POST /org/teams`
++   - `GET /org/teams/{org_id}`
++   - `POST /org/audit/{org_id}`
++   - `GET /org/audit/{org_id}`
++
++## Run locally
++
++```bash
++uvicorn v2_backend.main:app --reload --port 8000
++```
++
++Open API docs:
++- `http://localhost:8000/docs`
++
++## Example mobile client flow
++
++- App opens and calls `GET /health`.
++- Subscribes to `WS /market/ws/prices/AAPL`.
++- On tap “Analyze”, posts recent close list to `/predictions/explain`.
++- On alert creation, posts threshold to `/market/alerts` and periodically checks `/market/alerts/check/AAPL`.
++
+diff --git a/requirements.txt b/requirements.txt
+index 1c23be580959f5d1183e913ebc2e992734b970ec..43895e5d93d0aa2566246aa0f6bf1da87a5f5691 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -19,25 +19,31 @@ ta==0.11.0
+ # Machine Learning - Essential
+ scikit-learn==1.4.0
+ joblib==1.3.2
+ 
+ # Advanced ML - For 78-85% Accuracy
+ xgboost==2.0.3
+ lightgbm==4.2.0
+ 
+ # Sentiment Analysis
+ vaderSentiment==3.3.2
+ 
+ # Database & Auth
+ bcrypt==4.1.2
+ 
+ # Payment Processing
+ stripe==8.3.0
+ 
+ # File Processing
+ pdfplumber==0.10.4
+ openpyxl==3.1.2
+ 
+ # Utilities
+ plotly==5.18.0
+ tenacity==8.2.3
+ openai==1.12.0
++
++# v2 API backend
++fastapi==0.115.0
++uvicorn==0.30.6
++httpx==0.27.2
++pytest==8.3.2
+diff --git a/scripts/create_full_repo_bundle.sh b/scripts/create_full_repo_bundle.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..8124921f9c18c0e2e6c7aa78d3ca0c0772c17326
+--- /dev/null
++++ b/scripts/create_full_repo_bundle.sh
+@@ -0,0 +1,51 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
++BUNDLE_NAME="StockMind-AI_full_code_${TIMESTAMP}.zip"
++MANIFEST_NAME="StockMind-AI_manifest_${TIMESTAMP}.txt"
++CHECKSUM_NAME="StockMind-AI_checksums_${TIMESTAMP}.txt"
++
++# Exclude generated/local artifacts
++EXCLUDES=(
++  "*/.git/*"
++  "*/__pycache__/*"
++  "*.pyc"
++  "*.pyo"
++  "*.pyd"
++  "*.db"
++  "*.sqlite"
++  "*.sqlite3"
++  "*.log"
++  "*.zip"
++  "./.venv/*"
++  "./venv/*"
++  "./node_modules/*"
++  "./.pytest_cache/*"
++  "./.mypy_cache/*"
++)
++
++ZIP_ARGS=()
++for ex in "${EXCLUDES[@]}"; do
++  ZIP_ARGS+=("-x" "$ex")
++done
++
++zip -r "$BUNDLE_NAME" . "${ZIP_ARGS[@]}" >/dev/null
++
++# Manifest of files included in bundle
++unzip -Z1 "$BUNDLE_NAME" | sort > "$MANIFEST_NAME"
++
++# Checksums for traceability
++sha256sum "$BUNDLE_NAME" > "$CHECKSUM_NAME"
++
++cat <<EOF
++✅ Bundle created: $BUNDLE_NAME
++✅ Manifest created: $MANIFEST_NAME
++✅ Checksum created: $CHECKSUM_NAME
++
++To verify:
++  sha256sum -c $CHECKSUM_NAME
++EOF
+diff --git a/tests/test_v2_backend.py b/tests/test_v2_backend.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b4833575ed5a2e70b18a8b43b5ddbb022b72257
+--- /dev/null
++++ b/tests/test_v2_backend.py
+@@ -0,0 +1,39 @@
++from fastapi.testclient import TestClient
++
++from v2_backend.main import app
++
++
++client = TestClient(app)
++
++
++def test_health():
++    r = client.get('/health')
++    assert r.status_code == 200
++    assert r.json()['status'] == 'ok'
++
++
++def test_explainable_prediction():
++    prices = [100 + i * 0.2 for i in range(60)]
++    r = client.post('/predictions/explain', json={'symbol': 'AAPL', 'prices': prices})
++    data = r.json()
++    assert r.status_code == 200
++    assert data['signal'] in {'BUY', 'HOLD', 'SELL'}
++    assert 'contributions' in data
++
++
++def test_portfolio_risk():
++    returns = [0.01, -0.005, 0.003] * 20
++    market = [0.009, -0.004, 0.002] * 20
++    r = client.post(
++        '/portfolio/risk',
++        json={
++            'returns': returns,
++            'market_returns': market,
++            'holdings': {'AAPL': 10000, 'MSFT': 5000},
++            'sectors': {'AAPL': 'Tech', 'MSFT': 'Tech'},
++        },
++    )
++    assert r.status_code == 200
++    data = r.json()
++    assert 'var_95' in data
++    assert 'beta' in data
+diff --git a/v2_backend/__init__.py b/v2_backend/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/v2_backend/__pycache__/__init__.cpython-310.pyc b/v2_backend/__pycache__/__init__.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..cc930c034bfd46a45f371f7c2752fc8fdcb57776
+GIT binary patch
+literal 115
+zcmd1j<>g`kg6o!3GC}lX5P=LBfgA@QE@lA|DGb33nv8xc8Hzx{2;!GmnNfUFVsdtB
+kUW$Hvd}dx|NqoFsLFFwDo80`A(wtN~kosaKAi=@_0P1lS9smFU
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/__pycache__/main.cpython-310.pyc b/v2_backend/__pycache__/main.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..c66be97bdc862c8dd033976fec2906638a0eff58
+GIT binary patch
+literal 1223
+zcmZvbzi-n(6vutG<D^cU{s^?7BIGqFb*pYj6{4zy)S(4Yrdy(m@0uR5eb$|m(o9IO
+zc4K6qBYyyY3X4}JHs&HE-qk<SAwJ!^&wKav%lW;F@I2Rm=jZb;{D*BAzqE7zX@c_-
+zruqYh8WcrFj4(o)&B%-`Y~8UH*>M9qB{zXvC9eRxCAWb)C40c#l2?J(N?r%vKn6q9
+zrVZ-Q=Cy@;toQx_vuJCK=*ped<X$&G*ZcO6wr>#aQ17$x3E@qMY%%8s&Ui<yn%tT?
+zHFaxRt7$_M?VcI^)!*>dMjz$PS43rpZ;k=GN3Y+Wop4Gcc1a|Ih$F=`V{+a*%S1Ri
+z;R)S2Joab%KD=<-*bnxCz4^xzG2#*1k&MtQe?-CwOQ?S?q#yAa^Ha$~rUpLykVb?j
+zWEANbqdd&GNMJ){l4NXr<%=}qF`pA1ANV6FCQJ@|$<+izEP+ih1D`;4A;<nXBiU3k
+z74)sVk?|~Id2`03g17TFWh#^$5`u%Cz3bc9BT*zSheGl(PZVA++z?KpQ<F$likM{=
+zg4XT@d=_M#H+O-e>>|{4yZ>0=9Klrjx=}<;YJD}K!uDxyiivDMv~T8)%HX(4>Rb2S
+zkR4bS=5}MYKP)S^8$*?X^eT6X-`fVIGQqf}?80)|e}tRo&@+;9spEL7^n$o<T@VVX
+zq&^vbyht4s-BdwL<b-7s{uKuH3TIgC;ipUF_u7Tq+Ns3bOT<+>@oGhtdf7>eE@Q7)
+zE9H|Vc~c>?a}jZY*J`ZvTTAo_yHvQXZKc{=qJoQrT`-l#B58`dgwo-nn7K8EV(HrB
+zE>FT}N?9pibg&=~G<oYF7IYf17YICc0H$MfP{)K>57RV}9?n18F_8^q!*Kq#R$S!T
+JFw4<J{{b)kTp$1d
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/__pycache__/schemas.cpython-310.pyc b/v2_backend/__pycache__/schemas.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d04696fd99b90972ac2167e3f9f90f15e702188d
+GIT binary patch
+literal 3673
+zcmb7HTW{P%6t>r1+j~nk*IsC$Tm&q)Ld8Xu0xE5Rg3>f<=mR4p%eyn#Sn*{$_9pBb
+z61?)ppXgtjSDy0318;~2zH_`uqskk>u4dxz9Irj+JKs4o$$P!Fh0o8oe~<t4Eb9*f
+z=RYpM9gN~1Owy8eVx_jQ(}rlIj&M>}xHj1vNi+3?m-@oDt#2&pNcUGuy2|^-5dm;h
+zdcYpz7O*b^;DB)(xFy@bZN?qoj_d+=8FztuatU~eaSwP|_JRA1mw;E~D)1`fW#Bcr
+z4!q8|54<5afj1ei0AG@qfiE*&1->G$0$*jk2K<t|27Hb2y1c$;4PHJ01J=Mb?)`XF
+z8h1M`N)tSqlyRO#iSf7NQt2oeG)(JmRH%o!REcSR9jio+=$Gd|4!|9Z;$=+A61KEN
+z<B6pl<w|?YQce7AY=K3**EQ{39goy*9%rR!m2s+yGD;_+IU)1TGtUHJm_?}yL(>k!
+zG?&wauDfCQbQ&ddk5iP|EQeu~WqBFVq6^&9+)whTd}irB7Q)lt8%MXoVKh2anY>wy
+z4pbTyA53OCzzt1WGE`!<t-$WuY+D@Ld$_SKHrbHQZ?^E1uYxNUB6SgI6OnpmWmhW+
+zcCot0>gg1L8n2k8!#p`5rk>fNoyJ+1sBByw7>@}kb_Oj?BGw(6x-|7@TB6CPX_F@6
+zTrbmf7Hf62Lbg>*^pLaguG(x{9Nu@hyFNS)%0U{vDmVn{C~v>P_9pD-v4`M&1Rt2y
+z^T8JrBuMEsykvknyZht^;XZh@eP6hHUu|!Lm3R!*iS{VZ_G78CkrKU$&WF)3PU13F
+zh3LUm>UcQiT<;8m#UxQ)D{2~aRmaaIIEcK0_^r|(*nNB5*5p~t(vR@gvs5Pn(Nb-2
+z#+--_UkBi)CAxgwCZUKPUw3fb1#dmGyjSX|RO8uPGECaZ7GA73Xrk<&P;O1PILLJw
+z9><x?kM%m4I!T_5=a!SV`6fIK8mn$Hof0CPgPp<BVh-zsc8#9rpltPZT<KS6x<OMN
+z!&l%SE(_8vF}#Tqqi^5V<Xg<~r|{NsTs0AHCZtAcDkwEpB~&Oqu;-hl=j=^D4wEOk
+zC3-{>YE@2kCcNSx(i0`RY4lSlb#x5&GO>0XC5PdDu8$)v!(sy2p%nea3~}wfinZ2;
+z{~8=OFwO)P*z`r0A<yFAx8bb`o;oQysA@{*w8toqb|G{g^c{G8P!K?HP1)i*NL(FI
+z(ly;jS}J|ofcz=yFpOnYiw)rnr!(OeDoHS-^t6o?3~bXFm&SQo&P;O>O_Uxq^jmNU
+zH;IpwanY64&Y-=R9j-wZ(VO^LRgI*_TC!e;gPiBc>e{PRjpSKO7CpL#toe3xsubyh
+zhNcO2^8&3T&p2{TzZI?MXdG7ij&8wFySf1!A7T`=XONOPjbvTCG6C=Tl}TGRkSZ5z
+z@{k^1l7gMNH8``9o~dV4-PM=WT?x0j+xk@}K{SC`--WvO^CZq6$Hn1ktDqjhUBdX4
+z*bB3iM*2{dbMY4<ILH$jXX8Tng&LK)hRQoH=8+TkE<MbliKWi_4{d^)yDINVb%p;9
+zZlMw`s7JM}O%y&iR<bW9tiI@FLx3<<X&#hG7ivGn&x=0TQOCu%rAiT<iewUJ%2>u7
+z=5l8IX?B>Qz_G{VQ;h@0MLWk$tWnb$QGY~JU3l-q@j1qs8aOzzE)I@L{=6DcuGO)K
+zv~d1tw8DX;lW0_)rj)i!<7No(!fwQQqE*x``W77bF#b9{?Vt&h?f)-XR@*-3g3GG?
+zy^7L@Djh1V-@qdWj%k8!rG+11OP>{`@Qz}241=rl1pIq1s*R<@^5U*h$NDFD@&gS0
+zF-?RPFP(%|!}eJV<qCAE0_UA!g+jQe6?WY@>%z<R7)=uAQ@HpvYW$Rg{10iM<<+L)
+zGdLb%oN0&79Ga|)qoFii7!5~)&A??XJuiyxmx<D6GNRN}n_;Uw&<ZDqL=I40(J((!
+zqB&Gaek@ut*60c7kr!%>+rh$A-Nu{tFy{4N?RyB5>^p-E<CU`s`cKtG99k9^96e72
+zlbMXNG9GCXYIWMBuFGdvKAQ2_f%j0}8#J|HO&QlLeqxK|!L0H->oQ@2t?K`ZFKD;p
+ae_JkFeY@}UoA?I(7Dmwb`aT9M>)yYm2dgar
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/main.py b/v2_backend/main.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b73adca2d3c410d63251aca038e22eb47fb00479
+--- /dev/null
++++ b/v2_backend/main.py
+@@ -0,0 +1,38 @@
++from fastapi import FastAPI
++from fastapi.middleware.cors import CORSMiddleware
++
++from v2_backend.routers.market import router as market_router
++from v2_backend.routers.predictions import router as pred_router
++from v2_backend.routers.strategy import router as strategy_router
++from v2_backend.routers.broker import router as broker_router
++from v2_backend.routers.portfolio import router as portfolio_router
++from v2_backend.routers.news import router as news_router
++from v2_backend.routers.org import router as org_router
++
++app = FastAPI(
++    title="StockMind-AI v2 API",
++    version="2.0.0",
++    description="Mobile-ready backend for live prices, explainable predictions, strategy optimization, broker, risk, sentiment, and org features.",
++)
++
++app.add_middleware(
++    CORSMiddleware,
++    allow_origins=["*"],
++    allow_credentials=True,
++    allow_methods=["*"],
++    allow_headers=["*"],
++)
++
++
++@app.get("/health")
++def health():
++    return {"status": "ok", "version": "2.0.0"}
++
++
++app.include_router(market_router)
++app.include_router(pred_router)
++app.include_router(strategy_router)
++app.include_router(broker_router)
++app.include_router(portfolio_router)
++app.include_router(news_router)
++app.include_router(org_router)
+diff --git a/v2_backend/routers/__init__.py b/v2_backend/routers/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/v2_backend/routers/__pycache__/__init__.cpython-310.pyc b/v2_backend/routers/__pycache__/__init__.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..36903469aaa96e3ac24d2f986e65e4da5853ed5c
+GIT binary patch
+literal 123
+zcmd1j<>g`kg6o!3GC}lX5P=LBfgA@QE@lA|DGb33nv8xc8Hzx{2;!GqnNfUFVsdtB
+sUW$HEerZW+QL%n}d}dx|NqoFsLFFwDo80`A(wtN~kiKFjAi=@_0LSteX#fBK
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/routers/__pycache__/broker.cpython-310.pyc b/v2_backend/routers/__pycache__/broker.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..82c11bc76aa19ff4f63e11a9d781c711a1e52eb3
+GIT binary patch
+literal 1400
+zcmZuxy>BB$6rYd%@UHE|i5zl<E4D(ckQ|8$r08_$gai@_(Q(x@*4i_1Hr}ty%o-<b
+znhWho6wsw`O8yQ02#Rf?fIonSiZ^5DE=Y_uZ|1#upTGCkWxpRHSigSuQ|h}2{cf1Y
+z%K_#&Y_$Z!5yu(IF~d1w1RI`YG<TR|?=*9Bk9qd)WPaXZ9gGC#F8Ah``)>#fM6eEd
+z=N|JwIA?^1y!(T5i&+=sJ>CO(U-Ut~!*{KGhY!9*@!nq$8^xpzK0p2HWm#(>+y0lY
+zUY&linu$uMWf9}H_l@L2z7&_WP#X9^rFoqtx|G1U3QlqDA5CSs5R!SD6I^<g6ldwG
+zb#yXUpimkws-;p~&aer)U4RYpVZVT_{s7XT3qWH*WLINOIOWb8@)~Qhrtspd-FpPp
+zxFd9fwRhoztOIw_kah6z{%~>+e*PW3CpX3x@By!<4dubeMCl%)8)wT=9*)q^N*g>x
+zhe-Dthj(wu2M9F6W7Js9V^ka%3m0uXe2OT7H|vr27Dx)nxeqAYoEzGZhg^;k-)%5x
+z4(_Ny{)9PMx)kZ(fW`IrYq&-m=%T#jA_A1^R0<U(JgJ~9(M$?13Y{jI8pninl}>c6
+zCNofG9v3=EGv-z@oryVMXje>IPhI8HGHdCjzG{PHIiFY+MyK_a?1Gl;0h#~&+lPO4
+z$9vDDX-xW~N$KMkNl}zKQX<PBB`G3(o)po!$as_%QI%AXR5F{Db)lJemS&mYHlWRm
+zg+{Us)~QOB+F|Oqj;T&k6WKJLg@st@jh-~$OY7DZc$S{I@7gGn2Xoc>wGwiY@|Mnp
+zW{yh1m#Lzqd9sRK85ozOTCu<?PRnx9QZQ$JA-<ac2EQPA06PCXU4Al|CbNYo_>r`8
+zueK9BuCCf{l_fJVu@h^OQcr<|q=$#FBOH<){1FcEK5#v}15_S@!u9azZKg-xZ!^7-
+zd+_w1fj1bNkKYdb6Sy=;BaJU$R7Pk`@6j#h_>RDkkdv5LdltO)96K!xj?xw(IRNw4
+zTP7KNn=!V!w!jT}&%E{ls&^1ZAW{U#6C&S-<0Rf?{#gRkRHf3$ZEx8AJAB4!b}sTn
+zNs}{+9zO`Vgn3hAJ5v+LNhJBEt)u@_vwsyfZ{}@4XAab*EqZbv+_w}so7bZ%Ov9ut
+crE?6^Q)l9tflwKP0qSj=(4hm|IT+%90f=^I0RR91
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/routers/__pycache__/market.cpython-310.pyc b/v2_backend/routers/__pycache__/market.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e3bd238d6a0eacd58fae0d601f50190d5488711
+GIT binary patch
+literal 1678
+zcmZuxJ8v6D5Z>8)@QxxW>S0NA93Y*+6e8d*fD^=si>MI-%RrC?0^)ePqE5WyQM*gY
+zQb@po)22%q1Z3eNRl59v)cFI~rt)7%kz{5m%d+DIc4l^VZg0MMmCa_I;ri{9pRzv#
+z#{Qzi?S(q_Id1bi63HawOc3We6kPDa6JFs9A4uorK@p13$$nldA`v+`$m60e>cAA2
+zp{xx-Mn7_~rq&h>881QBRr8q3HQD&Ve*vO}`gPeveM^O?UzcsCZ#(;q8~aVU<@6h<
+z-;~>^zoR_&mM?eYuDjckaKyTMuh4gP*!8OT(N_mg%BfYlioaHaqcR;STW#Hlk28~&
+z<FQI@7plgiTxt76olTXYb8NC=nkTl@cnAz~bye#XiN-fXxZ+)2g%hogvuBlWlcBj<
+z@10Fct9sv=%VJRG^D0~kDUeUsi)0`77r0FeiDe6zu?1hUB>@2RU5BWz>SOiH_9r?^
+zRTWGp6NSEL%HXd|H<A5)@BBf3kRYtF>}iM8T)VhGxvb)$vVG^!8X6mpq{a0*GDMOP
+zTvG*(zvUm<dAOZ_AESW2u_c>>1<Oyp7a(Dm%|P;pjLr*x21@|cpzq${D}q<?Om+iN
+zFG{KMzMK}5%FESQ*XS<1{&kojqOt69-A1*jO_IyJOr%4$A{3mek!qD#)puW!rHPP4
+zd=nbrgWkcz)y_4XUV5U^(M|Z@f<?7WQFX9>LE(1T=P+b*ZoO0gG5hw@xi|A9bO<;m
+zW#sAIvjzd~u(^*nUWZA4#Px$2oq`S<1t{}Hkg=Kf5@a~@GkCcQ%F4Qi)(1D%fbx5-
+z=`S-bqn|m3GCp*vt^${T5z9<trDo+=1j(R0S0c72TA7nFm!fHPHXJIwsud9oR9;?S
+zV0RH_6<=Q}*$rJ?X(|WZAVLYz+eGdl=?3nX!navE(tD()fV*e@pB4)BDl3Le9cghN
+z>d*!b5$wT^+x&SQbO$Z2wt5$)=ir!|998j!8W`7_DOKL<MKUG&58UP{lJBWUunrG!
+z_<YHLUG2t{AgsxSH-m*w-Lr((w>DUWlD|2h)qQ4bmtDXwfqjE-9I*?k*Qa^|AMZvY
+zOwv?MtcVR3W&hNa<9C8p)e>_#PO}onL9Wz9Qxjv5?;>+?dpAV!g;^!U+(#2bVdl?U
+zoMUwEQjGp-cp>nA^@sG%w*CN_s2wN9CX-APeobxYej_&Dbo#!*DlZbFsiMV4w=a}F
+z$5~<aU5xw2V&@bNh3LG`%uO{{10r0FkIKWDQF-{Kn-jvHlqge=xeTtblE1gG(j?NZ
+lRilU4@Y7s<Ml-<NLlUuVXz&KMYKuo+8zLWf4R>n~{sT4bg{S}k
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/routers/__pycache__/news.cpython-310.pyc b/v2_backend/routers/__pycache__/news.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..5156d82f7123e139f4d0089c92cca5648e795be3
+GIT binary patch
+literal 688
+zcmZWmy^hmB5Z+n;#_^#XN`Yvgb>kp9q$oPXHP=Mwu3HI3KJO+N*70W7K1h_SaxDcC
+z50I3+3XkBHidUdw)+e|~j5On!*`3edH(Q;YL<H@}t8WDZLVnuf*jy~m(9IMBCmbXx
+zfdSZ@N?JP1>2gQ9rN=xV0=Ub)1#tfhWxnwD0S^wqL*dLR@A2r)-2n@E|B58>FT^AX
+zw7u7FFD|R578;AwsrY0rN|ojHrC2q>)YyznUTHB~;?c$%*-z`*n9$Z&TFi^jty^ac
+zvk68;H`+Q{ta4QJ&nRXN`Wtlf90LbV@5q*XAm?NUw@?G-bnhI<7IqZ*In)0D>^iP2
+zz!1X%hu`_Pu!TK2kgs%wL*G#ki^_@%Ipa;KkRVN8w6N4Yoan;ur#CNW*IE8iEcr-x
+zvP~x`RqHky%fi%oRjNtf{>QQ&lFc(Kc6Ki<9m^`uq?usy_io~9&*EEtt#8)lbtPM`
+zQ3_W|b%<RSsBA5(j6V?3vAx|tg0>uu#Td{5=m93vq{o7JX6j58+LB?9AK0fRe=o|+
+zXuDVT<oH17n<5t`wcs5q=HE+YuBuGkVIMK+mebJ*$GE&kiiv$YV_PwaX$+5O=nUZx
+DtM#Jn
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/routers/__pycache__/org.cpython-310.pyc b/v2_backend/routers/__pycache__/org.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..e48eb0e15ad39274beadf1131879b857acbef02d
+GIT binary patch
+literal 1600
+zcmZuxzi%5i6z1do&`FkLTX7p3P12xn2Q6~Zt%YH<NSAgniloz_#o=<Kl(X-2GD*3$
+zDoqa1EFB7TO9DvU{NHru+NoW;W$Jr8J9g3#c#n?{kB^Vv_sFW#X)zpse)fC*kH^?w
+zw75B%xcCA^|A9&{0R<}|1|XXky!2wv*<Rt7K^y>+Abb&wK!m^YIF#YCAsQ<Xk@SXK
+zG)3#Fe-3ek{-#(%e_OWD-w|EsUvu&6wO?$=me@q;$@VZ3x5So<>A1a@F}U|V@xJqS
+z#qCF|zx_AX$@*ZMUw-@b!)j`z!o}uyGA$n{nHu>}o=l}S=nS-}l$`l{l^Vq!sy?^j
+zM9E?Pll4tH(z9^S;680VB~LP-#FvBP9HBfw(chq&vm^E#(ZLy>vzOiittDSE;~n{P
+z*vEMpP>kThqZkvSZk!`lFZjxb%eWneHwX@2!RI#AXWGazZc_zG=1LcR9{aSmjZ&76
+zrPBS#hFEx#i@50m$7w0!R#^#IBw|`ll#j*PpuR>k6(UKeA~)76<X92&eXbf5;vLJg
+z3#K;EezkM@Y4SMDj^$YFDF>k@j0Tf4yH;0{P(o@AO(^tu7w$s~R1X)k^%}IjpX<UF
+zY7M>rLl1k6k?4<5{lbPIK=7xLL2L-Ouh=;(;2E2P@Lq64#Xo!_1#JycZc&O|R3oI|
+zhwk@$0Si8dC3{A6u$O!ViqH9P{DhK#qH>Y?mNuy}`p4Wn>3fzBKCy6Y;q(Gru?_{b
+ziJ`W&U*y_kRXI6uM-lP6Y<7>l4g@{eFRCmp^Z^=Ip%=W))27or$AKc-203!7)ehSA
+zA-Bn@Pr6P?>wk&3ZH}ORfChr<czX@14blv|*M>Od)z~(KG-+PwjJ913vI!*DrQ2v2
+zw#2@i!<^4O>N>(a2L#4D#D+7enQF_cW9$jqsye9petng@<hV!bLsHZy*D$$Ax{9WK
+z8$1H%d4n-RE<ka`5b2I^EQtu8BY!JilTHP`n{-M+#6LpO)N79P0N)xMv6^C66A~OH
+ziO4gPBzTuCjI@xxT{8hfchQu#$7Xj&($ufxU6f)T>SO%TPUYC>OIG8Sqa`V-5&jaG
+z;3~`~&s!(j=Iaw2ns+dt`WV$=e?4vtQzT%LE2<{$UBAGA&Ys9J)rxK&-*}n>E!AnB
+zNj-4?n4>HX>-QS_lS&)+9@Q@HvmUNoCt06xarC&eZ`9~Gb-ftv;}0?|<N^J8nt*Dv
+THg7|hN8ScR4V2&x$`<?wn=fSv
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/routers/__pycache__/portfolio.cpython-310.pyc b/v2_backend/routers/__pycache__/portfolio.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..2fca1318d7794dc8d741011eca6f189609ede7f5
+GIT binary patch
+literal 565
+zcmYjPy>8nu5GJXANAVB@Mz+jaY@l0#qG*w+ixIdR7lRRLN3moocXW^h-Q2ZX9v~U}
+zBz*_1o%#x$a#Uc)2YlcC@s4){?eXz|k^K4iR4LBbU+)}BNX{1mPKh+ryk-rToO@f;
+zq6uWs+d&;Rk&HMqT!%VZavlE?GB)vZqLUY{QxhzN&h+4CxaBg{N8eeI|D&F);9d6h
+z^4rXAoB?u9FD<x*tt&gLa5Xcx8-tGG!*&;+10@~@lYKyDd$SN-+=5wD_g(1J5+9?9
+zKivgjZcAElFW!y_7X%y;Irf9yaDpHNgm4?ukbGK1;9sFjz_<;pQ4SjgE92%nKfSiK
+zuGUMG37XPbz=A_UCBGSDr2e1ZeVAXVa%I+f0{x!&KK!_S=!SmAxmv6G!Br*tA{0a;
+z0Y{{!MJAJlLZ{jad|aNqcN}ARZ5o9T_{7;^!oXcs8XWuX{SGpIyIzK^Mc4Q4Cp;kk
+b9lG>WWA&yspZzOgPL#7;<a{X7;FP}t?Pib9
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/routers/__pycache__/predictions.cpython-310.pyc b/v2_backend/routers/__pycache__/predictions.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..515640ddb7750e2c533285b057000e658ec4200e
+GIT binary patch
+literal 649
+zcmYjOJ#Q015Z&3`JD;7iMJx&`B<QZOB|0R8h^T0yC`c6BSm)cZ*>GRkJx56ts-z7S
+zKL8{eT1tM(wN(5CDrV1-eIw0i-mT`%ym!@jJYp2TUVb&dfw4ax^g|MOL+L(H(M&_m
+z3Qz#P=Q%Hg5`|Q<!y*rgP=&w{wA8^Gba>Cz00(E09-!3GJ=a4NE3QZS;7;Cx8tV8x
+zOU8eRn<dZ=k51m5R+|QG!rQ|Wi`rz3smfD4-=J&SY5$X}tI{D&P4TkMQ&XnP92d^4
+z%QU}^=k;#dse>LM=8)jZT(+`F*X}x+Kg=hfCKk7}i=xt)x5DCiMz-vNQx{OarF74!
+zH0*|*!7Y4-hHI{YkoYFQGXpp91HJ&s6US}nu8L)q|71yE{kWnNOoq;Sd+m@)8*J*@
+z>$Z_cf?Tlv&vfPAvx^stWtx4$QqOH?kn0Pa)mJ+g7JIFp*ZB=2{sioVn&V`o2CLLH
+zX>F|6qNaQ1nae(6kvc2rp}R~y?Z2YE@Hfx)3m&v=FH*9uT+^-DU%u_eMA$~J$kR=Z
+Tuf3lxrV_J9JcbF6#bfvnsr09=
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/routers/__pycache__/strategy.cpython-310.pyc b/v2_backend/routers/__pycache__/strategy.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..095c88af1b9de4d35956226391ece47cb8a02adc
+GIT binary patch
+literal 713
+zcmYjOy>1gh5Z>9_`?K#%1Su#G{T0|!IwXWZR5TGvB#LcL7w_7+<nH#eyN+=bs?dgt
+z2LOqNci>5`rQ#K6VAeikuk?-Po7tV6`9`JbfZ+N0{7VUxkYA4MABN-=!n{W#h=7XJ
+zzyX|3D_VQps~Kl&?p1yr@BoMe!Gu2t5!_QA%J3o*p=2Vury`c#jEaF6eqwjPW09Pa
+zEd7nONd{f~`rX?TwXjlWw0m%Bbz$Xvbt118(%5da3$#jGy#HufRG0Zo>1ClsuB8j#
+z#1qp$<k8l{azU%*to+b1Tg=T(I&n{*^-nY4BP~s<8YA;s30ZZXmRD17ef0;$ApznI
+z!W^No<d$3jf+9QwL-=?8N3emQ!ezp*(Kk}UEqsU1fP;F+U0_!AnW}z}EY?0&;n-I>
+zm4+wg9J|k#Wh2y*4=dHow<N)N%4W-k7RBg^cI(kGn$BOet<z0Mjs+Vrv|H}l{CRqP
+zl%EyTOWBBtUTbXr3pH+6-GN@<7khfTs>T(g^bpwJ$DSS`InD+=oE63vZK<6m{Nb+f
+z*i6r5T^Q|QV%-~mvY(au+RZxNuBBIC(++2?!i4)|*Y?IsG1f&da5IZazI0nL37Ui)
+L&;&*_@ebi17d*XP
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/routers/broker.py b/v2_backend/routers/broker.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..557f651bdcaf464d58a55b02e7259f4488524cf1
+--- /dev/null
++++ b/v2_backend/routers/broker.py
+@@ -0,0 +1,34 @@
++from fastapi import APIRouter, HTTPException
++
++from v2_backend.schemas import OrderRequest
++from v2_backend.services.price_stream import simulator
++from v2_backend.services.store import store
++
++router = APIRouter(prefix="/broker", tags=["broker"])
++
++
++@router.post("/orders")
++def place_order(req: OrderRequest):
++    if req.mode == "live":
++        raise HTTPException(status_code=501, detail="Live broker mode requires adapter credentials.")
++
++    px = simulator.next_price(req.symbol.upper())["price"]
++    user_book = store.paper_positions[req.user_id]
++    pos = user_book.get(req.symbol.upper(), {"symbol": req.symbol.upper(), "qty": 0.0, "avg_price": 0.0})
++
++    if req.side == "buy":
++        new_qty = pos["qty"] + req.qty
++        pos["avg_price"] = ((pos["qty"] * pos["avg_price"]) + (req.qty * px)) / max(new_qty, 1e-9)
++        pos["qty"] = new_qty
++    else:
++        pos["qty"] -= req.qty
++        if pos["qty"] < 0:
++            raise HTTPException(status_code=400, detail="Cannot sell more than held in paper account")
++
++    user_book[req.symbol.upper()] = pos
++    return {"status": "filled", "fill_price": px, "position": pos}
++
++
++@router.get("/positions/{user_id}")
++def get_positions(user_id: str):
++    return {"user_id": user_id, "positions": list(store.paper_positions[user_id].values())}
+diff --git a/v2_backend/routers/market.py b/v2_backend/routers/market.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..11cc952ddfef838568d4a54742ef78e6da67de60
+--- /dev/null
++++ b/v2_backend/routers/market.py
+@@ -0,0 +1,47 @@
++import asyncio
++from fastapi import APIRouter, WebSocket, WebSocketDisconnect
++
++from v2_backend.schemas import AlertRequest
++from v2_backend.services.price_stream import simulator
++from v2_backend.services.store import store
++
++router = APIRouter(prefix="/market", tags=["market"])
++
++
++@router.get("/quote/{symbol}")
++def get_quote(symbol: str):
++    return simulator.next_price(symbol.upper())
++
++
++@router.post("/alerts")
++def create_alert(alert: AlertRequest):
++    payload = alert.model_dump()
++    payload["id"] = len(store.alerts) + 1
++    store.alerts.append(payload)
++    return payload
++
++
++@router.get("/alerts/check/{symbol}")
++def check_alerts(symbol: str):
++    tick = simulator.next_price(symbol.upper())
++    triggered = []
++    for alert in store.alerts:
++        if alert["symbol"] != symbol.upper():
++            continue
++        price = tick["price"]
++        if alert["direction"] == "above" and price >= alert["threshold"]:
++            triggered.append({**alert, "trigger_price": price})
++        if alert["direction"] == "below" and price <= alert["threshold"]:
++            triggered.append({**alert, "trigger_price": price})
++    return {"price": tick, "triggered": triggered}
++
++
++@router.websocket("/ws/prices/{symbol}")
++async def ws_prices(websocket: WebSocket, symbol: str):
++    await websocket.accept()
++    try:
++        while True:
++            await websocket.send_json(simulator.next_price(symbol.upper()))
++            await asyncio.sleep(1)
++    except WebSocketDisconnect:
++        return
+diff --git a/v2_backend/routers/news.py b/v2_backend/routers/news.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..992412378b2e64b9c3cdd80bbf1199b6c3111b8e
+--- /dev/null
++++ b/v2_backend/routers/news.py
+@@ -0,0 +1,12 @@
++from fastapi import APIRouter
++
++from v2_backend.schemas import NewsImpactRequest
++from v2_backend.services.news import score_news
++
++router = APIRouter(prefix="/news", tags=["news"])
++
++
++@router.post("/impact")
++def news_impact(req: NewsImpactRequest):
++    payload = [n.model_dump() for n in req.news]
++    return score_news(req.symbol.upper(), payload)
+diff --git a/v2_backend/routers/org.py b/v2_backend/routers/org.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..a1de58fd811f2a0a435410bb1677acb88e6fcf94
+--- /dev/null
++++ b/v2_backend/routers/org.py
+@@ -0,0 +1,32 @@
++from fastapi import APIRouter
++
++from v2_backend.schemas import TeamCreateRequest
++from v2_backend.services.store import store
++
++router = APIRouter(prefix="/org", tags=["org"])
++
++
++@router.post("/teams")
++def create_team(req: TeamCreateRequest):
++    key = f"{req.org_id}:{req.team_name}"
++    store.teams[key] = req.model_dump()
++    store.add_audit(req.org_id, "system", "team_created", {"team": req.team_name, "members": len(req.members)})
++    return store.teams[key]
++
++
++@router.get("/teams/{org_id}")
++def list_teams(org_id: str):
++    teams = [v for k, v in store.teams.items() if k.startswith(f"{org_id}:")]
++    return {"org_id": org_id, "teams": teams}
++
++
++@router.post("/audit/{org_id}")
++def add_audit(org_id: str, actor: str, action: str, details: dict):
++    store.add_audit(org_id, actor, action, details)
++    return {"status": "ok"}
++
++
++@router.get("/audit/{org_id}")
++def get_audit(org_id: str):
++    logs = [a.__dict__ for a in store.audit_logs.get(org_id, [])]
++    return {"org_id": org_id, "events": logs}
+diff --git a/v2_backend/routers/portfolio.py b/v2_backend/routers/portfolio.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..857d8ac978b8e088d8758d37f8547a06b67281b6
+--- /dev/null
++++ b/v2_backend/routers/portfolio.py
+@@ -0,0 +1,11 @@
++from fastapi import APIRouter
++
++from v2_backend.schemas import PortfolioRiskRequest
++from v2_backend.services.risk import portfolio_risk
++
++router = APIRouter(prefix="/portfolio", tags=["portfolio"])
++
++
++@router.post("/risk")
++def risk_analytics(req: PortfolioRiskRequest):
++    return portfolio_risk(req.returns, req.market_returns, req.holdings, req.sectors)
+diff --git a/v2_backend/routers/predictions.py b/v2_backend/routers/predictions.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..a839b0936b2e7adf202033c225f5c38a30998961
+--- /dev/null
++++ b/v2_backend/routers/predictions.py
+@@ -0,0 +1,12 @@
++from fastapi import APIRouter
++
++from v2_backend.schemas import PredictionRequest, PredictionResponse
++from v2_backend.services.prediction import explainable_signal
++
++router = APIRouter(prefix="/predictions", tags=["predictions"])
++
++
++@router.post("/explain", response_model=PredictionResponse)
++def explain_prediction(req: PredictionRequest):
++    out = explainable_signal(req.prices)
++    return PredictionResponse(symbol=req.symbol.upper(), **out)
+diff --git a/v2_backend/routers/strategy.py b/v2_backend/routers/strategy.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2fa6587a406ca74fdf5e0c137ed08f76c6054dd9
+--- /dev/null
++++ b/v2_backend/routers/strategy.py
+@@ -0,0 +1,14 @@
++from fastapi import APIRouter
++
++from v2_backend.schemas import StrategyRequest, StrategyReport
++from v2_backend.services.strategy import walk_forward_report
++
++router = APIRouter(prefix="/strategy", tags=["strategy"])
++
++
++@router.post("/walk-forward", response_model=StrategyReport)
++def run_walk_forward(req: StrategyRequest):
++    report = walk_forward_report(
++        req.prices, req.short_window, req.long_window, req.train_window, req.test_window
++    )
++    return StrategyReport(symbol=req.symbol.upper(), **report)
+diff --git a/v2_backend/schemas.py b/v2_backend/schemas.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..99c7892587360f44174b58d1d3e2dfe90d896e82
+--- /dev/null
++++ b/v2_backend/schemas.py
+@@ -0,0 +1,87 @@
++from typing import Dict, List, Optional, Literal
++from pydantic import BaseModel, Field
++
++
++class PricePoint(BaseModel):
++    timestamp: str
++    price: float
++
++
++class PredictionRequest(BaseModel):
++    symbol: str
++    prices: List[float] = Field(min_length=30)
++
++
++class PredictionResponse(BaseModel):
++    symbol: str
++    signal: Literal["BUY", "HOLD", "SELL"]
++    confidence: float
++    probabilities: Dict[str, float]
++    contributions: Dict[str, float]
++
++
++class StrategyRequest(BaseModel):
++    symbol: str
++    prices: List[float] = Field(min_length=60)
++    short_window: int = 10
++    long_window: int = 30
++    train_window: int = 40
++    test_window: int = 10
++
++
++class StrategyReport(BaseModel):
++    symbol: str
++    total_return: float
++    sharpe: float
++    max_drawdown: float
++    walk_forward_splits: int
++
++
++class OrderRequest(BaseModel):
++    user_id: str
++    symbol: str
++    side: Literal["buy", "sell"]
++    qty: float = Field(gt=0)
++    mode: Literal["paper", "live"] = "paper"
++
++
++class Position(BaseModel):
++    symbol: str
++    qty: float
++    avg_price: float
++
++
++class PortfolioRiskRequest(BaseModel):
++    returns: List[float] = Field(min_length=30)
++    market_returns: List[float] = Field(min_length=30)
++    holdings: Dict[str, float]
++    sectors: Dict[str, str]
++
++
++class NewsItem(BaseModel):
++    headline: str
++    body: Optional[str] = ""
++    source: Optional[str] = "unknown"
++
++
++class NewsImpactRequest(BaseModel):
++    symbol: str
++    news: List[NewsItem]
++
++
++class TeamMember(BaseModel):
++    user_id: str
++    role: Literal["owner", "analyst", "viewer"]
++
++
++class TeamCreateRequest(BaseModel):
++    org_id: str
++    team_name: str
++    members: List[TeamMember]
++
++
++class AlertRequest(BaseModel):
++    user_id: str
++    symbol: str
++    threshold: float
++    direction: Literal["above", "below"]
+diff --git a/v2_backend/services/__init__.py b/v2_backend/services/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/v2_backend/services/__pycache__/__init__.cpython-310.pyc b/v2_backend/services/__pycache__/__init__.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2c4fdb66ea59e3903f663a2d9cbabb0d2d30282
+GIT binary patch
+literal 124
+zcmd1j<>g`kg6o!3GC}lX5P=LBfgA@QE@lA|DGb33nv8xc8Hzx{2;!G~nNfUFVsdtB
+tUW$HkYEfBca%!=De0*kJW=VX!UP0w84x8Nkl+v73JCMd=CLqDW0080w7`gxe
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/services/__pycache__/news.cpython-310.pyc b/v2_backend/services/__pycache__/news.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca3cbc513b35f2ee7c9f1934148826e6ed01af89
+GIT binary patch
+literal 1325
+zcmYjQPm3fq6i-sAR8@C%PtUUI>I$xVYY#4{Ai}b};LfgsjKU5IL20Txnd)Myt9p}k
+z_YS5`<Hfrdb%bfW=tuD67tk+|tEagMipaX6FV({`FXa8J_ulU%^-}kG9R&2lJ6{!V
+zF@%2e#$^H@x(i$12PTlfC7NT7F`6MkzQ>$^3_u2gicl~S!HQ2qPDLU^(UDlP7ttXV
+zU6Fo4c_exd(Xf9Gwa^ed`az-1od^sbEf=}Ugyf-Ks$4pz<g`|Tvs~3{Gvjn3GsC0F
+zvMdWd<7}bo!{Q=0JXG0Ia9Y+{^F-9^YFmoV3vf`O>IG!VOhKlL%51Hdg~@#n2>m_E
+zfBnVNpQHS+rN2h`n=Sn@8iqWEw5q6b&EtGoh^(4Q&gK$YRJ@~PzAQ6S)Rm%8%Q1aC
+zpVXxb3nS-xN?L?1y8<GC{Vr_%8b&Bb4H38rU{j0lq0h=DwBZ@tst7jZTO?>}g<I>p
+z;0$k2!wj+PEZCqE+(d@j$b@&j9=AGc^~A<Dc>$^0US2~c5^U=^A=gob0k0#XrYqtm
+zHSt-pL4e)=lr+7jZ+n)lkUFrvrfd66iXr~decQ3=Rn+X*!0x<_n!r+<f~1z5b+#RE
+zu<e?z?TF-rfZXv?bWZ68=HyXqsrnpp=>_`04n+5esuPh`5$L@mq`nk==xnFiwFvSD
+zKHu(IA_k`v=4E&P;%C7X$1|CUvZ$m(Pw)*#C$%^}hwFq1%4H>0R$j#ZJ~|J;J)|lE
+z;W~09D>F973&|4=YB2}K(_+5Jre>^R*ku0A*PebF@pw_|!W64#uAg08$sB(5O7f_Z
+zO9MbqI`qK1^~&Rx<7Z`ESY{JhD*t$fsS9#xz*VoMa)I``UX+D#K`AR2eDvW%7wqpn
+zaKSu#?0S12@9iIqKiPZ#!FvY}+X{|li-oL&3st?W#PCWB+kWD#ZCvoasZCan*RsfG
+zMhc!@wjK5J=%|s80ecP43Z@xOIGz;-G&tB+OD36??I~2xAB=6waUxd^uQ}V^6^|~?
+zt9BshN2Fc>@#OmIjqxO#9zmbCv{b8ND)p^OuJ!ASW7lcB9DB15!TKIBiv5boO`Nvt
+zCZ>eq0ghWg#pK^OjJ-u-LO_D{l>IkIUdAMdF@eRNs#l@V{xEh7{wq9E<zJk7&a>w|
+vy9Nwy+$cvyF*R*?+wLWH!^gz8=e1at@{XS*eHB=WVgfJ#y<O~|my-Vhb8Klg
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/services/__pycache__/prediction.cpython-310.pyc b/v2_backend/services/__pycache__/prediction.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..863861ca98da02d047aa60f5f1603339d6a69891
+GIT binary patch
+literal 2004
+zcmZuxO>7%Q6rP#gS+9TNxNeg)DQclYm_wSRR034Rh_(WWC>$aVjDoDSXKl7w@0!_7
+zT9?^V!i}Fpxqy18kG*i@iUe1XdO#dj9H2-@7D$}nP!RCm+G$e3tme)8nK%39eQ#b^
+zE*A)l+b?|VB{@QVLgDxT9eD|6v<XBKNqy3%g7%qU6lLZc!jwg6y3FMZL~_@Xmdm@A
+z%t`xzi`*lN<<hPx^RjSY3R|)*(kPALOwwSfdDZL0skz}r@#eS!y3`sduj59kb;Ao}
+zcq6rx8}F*1!_Z?o^00E4S71h;1BuCXs!7Zw{eUGbCU*_ZMl>;iGqoX^BqJj+rxJud
+zGKwVOG1ulk)pUoeXSJzm5w7(fTOfC>5ef1Wt6I}$CR5203v_(yaYgh0@c^rOP4lUT
+zk>s?cbJCb2izKn72_M%sO7jHLU~S%`g3EX~a217X^j>^_<-v!;YwKeP(il~ZT*`t$
+z${nSgVamIH=s>=t*X^ce$M*)Q;k!X<_FX4v<P|1GSwK<)9E2rZKXxL)dyW@G!t%o?
+zawB0od%YH_CLC%7Q_(%5PJrvfb9-y8w$s^h19>5G)gHoeVW3<IP<dgnJQ${COGO_3
+zEUE&j&;qT{DqVxG1gkm;$__?<IPhE>W(L@|V0jEMfIvdpff@^t8fnfG0MXENpGv-C
+zs&kL*)}cM1nkBFUYHb3UIU)%_DD7i1*G6IiuzY%EZhB@O&fJ1x;4m%lDNKAu7)Mbu
+zEP+Kbq5+kq#Ex^C?9(JK%Q{ylvZAdznIm#Wvuv$uyAEK=S)G?PSZj*}^+_SdGPLCh
+zU4Y#sSsxj2O7Tbwdk?jxsn(41x~NP0EVG@=Jj$q<Bf1P{R)DW80-w<mQhDl*k<5VK
+zjGnn(kaJM}Rp6@&B$<ti)0pS?8Sq);a>8fPPx%GB!IXdO7O0b_@9?Cis}NyP&!Pq}
+zS(Hl$M9<tUjmTBVjjqWvcT6bfCpHy=JpKp9_-`NzJIomC(R&D@_Xm;(XvGTgens&Y
+zAia0%pS|+qt%GLoo3C+v-|Tg>@m;fbF&kesd*A`%ezW)KCphjk$7>)@)ju?Q+aG=T
+z`!n0W9lHM9Y#73L`HeS)`ReN%SB1HCZDXTBQ)9;+j?E*_`(HG;sKpAZz14SCS6X`!
+ztQS{Au^;x`Al~h_E=iG}bfMO&6t%t3cVf@?;$dsx296&Og$>W4)%Kj|v8p%VFW5!5
+zU`A(wctn%8O4}@<3DYztF;uZ6nA6+r9qfx#Ey1=1Q)O6EuEO0wHjI=lucUM*rF+=}
+zosc^2C|t%z*$MlD^$Q?J*d))ATTi<;2R^)Sr|r9~$m>Cn%a{GI<M`3~@{vo!Os$DE
+zEp)=5>q$50xS~8zVcTir4LxYYWiZ9cYwzOYj~ZoFgrBGq5{yz|2T-#>gb~G3VH3|9
+zfSLg=HTurY)abdfI)ftjVz(bPPE0yg4ZS#|wzWE0E(zXuTB|GB0vOnb7zmyrBnn5#
+z7X~C<@Te0iSMc^OpdqZt^?h954t?2zwi$=9;|q>Aiqw-B+EYl*Bf+M0ESI(aCJnC^
+zJrATp>-0QywkkED!#ziBy24JeQ*;TWd0JsMEwK{tCD>>E$!zR`j9P!G1~>z%SZ|Gd
+zYC)&>f}TQ{6jq1e!ES#roTN0v-0&dT_&PGzV=-pYW}w@b`=Q+R-F57+5x%%8vFVa=
+Gy7(``Z~2)3
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/services/__pycache__/price_stream.cpython-310.pyc b/v2_backend/services/__pycache__/price_stream.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..85f0f49fe06d888093394030b7f832aee6f43334
+GIT binary patch
+literal 912
+zcmZuwy=vS*5Z*uObQjxk8k^LHfFRi5E?{CqigYI6CTz3F+O<)lpUdv*VjH=-EAjv-
+zQ{0t#ioD0Rsjf>I41vt(e8dSEF{7E$%<MNat7da^M1VfM_+0EULcXK%kT@78!0tH+
+zO*Acu#5XHxMJ1)=HPKv)8PQ_OBr|MEB-iweq|p*G$Z1MLqBC!NQJEY)4@rP=0_>iF
+zFho*KB-2#08CKy&XknrYp(7p7gpBn7>Ly|9jV*F>R#a`7`NrlHlGlVf^g&($J8Z2W
+z9Z`T7GAV+2RA$brF;;M33TMiTuf)a>dbc+@ROea#-qiZQ89Tw4gFaL_Z%tP1kFP_b
+zR8bdRDNJ#A)`;Hh{tan=9TQ@AU7a^&h^_Iht#gcDQv}KYxX1byl#aY3bJ|hQ<}gFe
+z7VzA%-hvr}&OOYcV;$cmQ+6vlff*e=0`^fSbUbA~o(~peo-BwS>=K=P;n4Z;ba@E%
+zmv<m8fq{O0TPw%+%8%nEq6<`}+zwHT`rhRbcjtUojnkpUl?8rjJhYV6x~b%#t&5As
+zR)JU9RfufU*4knv8Mi*Kn~!o>xCSFKpGFqDUX>T;nKMCD&BWNp=*5Yy1db()YIAkJ
+zDum;<LF~{Cx<yBnu>{`nubZd;O#V;KX*$4V)mdef3L~YeMz<yE8%lj>vvT#tCU_Qy
+z1qY#v+}j<nA3*6rAs&nW0-|^5N=QO?c<)PveS+Vy=iVWQZhblbS12S$D=07VwmLjN
+KA<z~dZT|)l712rn
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/services/__pycache__/risk.cpython-310.pyc b/v2_backend/services/__pycache__/risk.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..82266eed555470c4e7ad28438fe2bfe261b4534c
+GIT binary patch
+literal 1097
+zcmY*Yy^q~Q5Z_sQZNJYuB@hS~Ap|sTE(nQ8kxmB^SHd-c#v*$1dG{{n`768oUh>eo
+zdZDC(lHy*;zqBpYb<_wXX8bNn7-@d<v9mLt*>O9YjTzGQ<KN0>0b_rX@ix)vSIFiZ
+zK{5#yt09A$XB^1pRgi@;P+W=oOoq2oC{U3SmmGc3phu)%CNh@Et1yctf5Oty4d!Gi
+z_u*MtSRZ~<8hh?zt?WuS#?R|qFO^-qwv%UVCClc@_}Hkzw%QaSCAg&nlmhu{Wb+S#
+zWj}&rmP`1B_u*i{ttD(=Ll<rVQEXw$`^beZnqWsi<99moM(2397nWOgEnF!1j&Grl
+z(V`n-$NR)3GN9g<fj+YwEu6&Ocf_{PfQ<T)jUB&Ec4&9s%D5kwte>D~v}0%N>AfF#
+zKka8OxE{NyOfcu%O;Df9aL3)ujgQ!S%uU?<ggyVxPFyTUTaI!>QjX>16`t;MZ9z_d
+z4{)}#^As{6?WR*VG?kR!017=KAT8yC7#vq<4|J>i^<@@+-z=N<MRP+VF6hE*!YyGD
+z@)Kn90HI`#Jso2Y&~pctIWF0j|H_}!8-u0|O2G@=t{RyJo*#eaVd-K02h;Rse;=(s
+zUtHwHQZ@3SQF>h#$~@GiSsr&AKR%JT8%0}pr|(lij_`o}^l{f}d)ZcHyBH!*s<y~0
+zb9($H97{#(TrVDf;lm4MbAPbknuU7VwPvMNI`zEiGLdVYZ@jpy+T8k}E*l?Is>#Nk
+z(uHblSt%bB?b-)sRa44prHmJ)RkiWKm9lz59Uf?!l%`p08jp?<JZKMf7Gu%{=G1rS
+z;6A}!Iu*9Hd8OYWJu;j6qOH6b3S`m#V}}Xt;gF){|L>csnU4_WFo!$vAsq54e2N&t
+zAxz-|NP+~l=wJN_2BnFQa3Sy)(lka*FPVvERd*ZxE;;TYV4GGC;cwNZchbWLBqwz%
+RSCu-Yl`z!kAxq#<@E_5W1R4MU
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/services/__pycache__/store.cpython-310.pyc b/v2_backend/services/__pycache__/store.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..0d0c2067a659578cbdb5c8a03e692e6a08f163c1
+GIT binary patch
+literal 1139
+zcmZux&2AGh5Vm){KiMR0`D+28p19<aO5BhtR0IeiK@UV+e6h^hjTZJN*iNNZxg~D^
+z4*<u$lCPY21y0O3ZE2y7{CURv?b!3pY`WpFATU->zg1r&LVluibue%aVA}TpiYQu>
+zhH^^Lj_Rn1c^vGxW=+DACgmw5I(|(QQ^|^`WEm|f&%jSr27b1Tc&_s$;XRd4$f)-V
+z;*t^deWj1&ymqQ89k@Luoh)l<?I`l>C2V^3wz957`qdGGa{$wh0W{%M5gvVjD`=+Z
+z{(6nh*BI6W_SrsM3=U6y@qDf-_v%=;&ZnK3ic0xJmaa2Cg{A6RpDFERRog?L=R&ly
+z(L(q_h^ABX8ts7)U*@tte-c|~{H74HZ96A1gar=6yv~TZ1-A_F`_b_e@llqab*uKQ
+zHpf+|?Vg2`^>}t-QsCjVSe}C9QBHF@pke<%4RYWdAo;2WimGTuc&tzf1`{(+b#j!e
+zOyw)aQ`G|v3O{_)zSB)-P9}JGNg>e1KpVP(yntyR15{)|1aZ_sRl$nEV!=wL_#{<i
+zLeA*nDC3FKvatr=_N<1=`9h-BqVA^FY{53)oXMFsV%FIz$i!1wYvU}GpIKcW{T0jH
+z#xS6M)j|ZZ37*BIQ(A=I>Gri8#ur4B0m&fK^bk<YG6A?4Xd@>ixC_RDd?E|_fP9A(
+z7jzLV;ssl>AEDtV#M}kSC^p-$K!eO?P`pr*QDSyr@22zq&7voj5<!Z4@P<W!cIoNP
+z^#m?CAf@SJ<N?AE;Xc9!0;*^pB3!oB+CsU^9RQ?R?4z9IbT<uqhfwo=+10fU4Zf}s
+z?_Yj!+8X?*eCkeSRXa8K7hq7RkZB0vlhCL)9qaS`^@s5co5$h>24q0DXcTYJjjZVZ
+E0kt9WHUIzs
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/services/__pycache__/strategy.cpython-310.pyc b/v2_backend/services/__pycache__/strategy.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..b6f2c02b43f9266422598ff4bfbb8cdd013095e3
+GIT binary patch
+literal 1235
+zcmZ8gy^kw35VyVFk0hI1-X-@gM?eUPCKB)@8uSnX1XKvU1}X~_nX@l%$!2$N>|BWC
+ztpeq15Y-c)yON5M|7BaMtDr_tI>sB_(;Z&T?96y({PTFG?Dx9_*Yn3eXU{`I{_@J*
+z<##_uGVdc(MA4kAsG!u#EN3E6fu@?D5XE(<LZk>O*5O%KC93lS7m;FLl3Di}<H?LR
+z{EN)kCrwmAcB)O2nx`e$`6eq=xoLWNSuAdq)Pl^4Tdilcx%E3mq%YS5r3mR$B=Z|3
+z#FFo*BbF)pjMd?S)QF&tkrI?UDyX|IsC%yG_%X483wLx$;U^cOrM3OYPDq`iZ{Kpq
+z&?DW^9s7)Y^F}>zsT(*tA#UKkF2gHQAG9`h&o*@Z%g7zL;gZAWiWgLcS6H+2w`}bC
+zj;ZLG&-eD%tRB=4eEbRVT=5AxAycg7gw%)bfjb<NdgLO^HS+N;QQVD=$zxI{HgT~_
+zc6c+_!F|*aK|CexIbXT1;_nf>Dc%VG|GTZ3`b>Dn*hTQGC6^r+T~S0C)JN_}1&I0&
+zw1(d5j;2`A%dU#A=$N!V4_ycTv_03^?PHEDv#A>^M6;u<{P2!^yq6JC=NIlf;mM4O
+zP}yyz7yC#2=Oe&pBiAjv!G&!S8Y{tGzwmaBY{r|^mR9C-&~^<)6Pc$HDlO8L{C=)L
+zZm@p}G1|y{IX^35BSFngm1ow>`VA{85lR5LZNjs>l(q?ST{I!cVxa|JX^9DCRp~-C
+z9bK$f8l=@tfVo9rtP<Ru0|u=!A5^XjHJd<yu)t#j-;UsW5MpE^z>}JIkJAWVX}J`U
+zK3`{cD>}DOjfnQ}z>k>dw(V_l910PeY*EPEG&B>*em+)G#O-XL5a4!00o`yw>>Qxq
+z9(qycFz`~;Rz&?yV2bL$uV1`7|5lzZ@otZdh6_J-kJ?bZ*uGP3oBK5bUEx6b8<|g#
+z4FXPIer!mGs2$QVeiJ%o6PnO2O_9blVF?}nos16Yo9LAWDcTv0UchUZW)?RQzIawF
+zfT1cvtZ}u41C(KitO>Hhww^8MJM2}zn|!b;)jHQ7`W7*-AWKO?SrAcn!|u`G=06}2
+BKRW;b
+
+literal 0
+HcmV?d00001
+
+diff --git a/v2_backend/services/news.py b/v2_backend/services/news.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..288461a6ab6a549197241a5a031a04f20419dadb
+--- /dev/null
++++ b/v2_backend/services/news.py
+@@ -0,0 +1,55 @@
++from typing import List
++
++POS = {"beat", "growth", "upgrade", "surge", "profit", "bullish", "record"}
++NEG = {"miss", "downgrade", "lawsuit", "drop", "loss", "bearish", "fraud"}
++EVENT_WEIGHTS = {
++    "earnings": 1.5,
++    "guidance": 1.3,
++    "merger": 1.4,
++    "regulation": 1.2,
++    "lawsuit": 1.2,
++}
++
++
++def score_news(symbol: str, items: List[dict]):
++    scored = []
++    total_weighted = 0.0
++    total_weight = 0.0
++
++    for item in items:
++        text = f"{item.get('headline','')} {item.get('body','')}".lower()
++        words = set(text.split())
++        pos_hits = len(words & POS)
++        neg_hits = len(words & NEG)
++        base_sent = (pos_hits - neg_hits) / max(1, (pos_hits + neg_hits)) if (pos_hits + neg_hits) else 0.0
++
++        event_type = "general"
++        weight = 1.0
++        for ev, w in EVENT_WEIGHTS.items():
++            if ev in text:
++                event_type = ev
++                weight = w
++                break
++
++        impact = base_sent * weight
++        total_weighted += impact
++        total_weight += weight
++
++        scored.append(
++            {
++                "headline": item.get("headline"),
++                "event_type": event_type,
++                "sentiment": round(base_sent, 3),
++                "impact_score": round(impact, 3),
++            }
++        )
++
++    overall = total_weighted / total_weight if total_weight else 0.0
++    label = "positive" if overall > 0.1 else "negative" if overall < -0.1 else "neutral"
++
++    return {
++        "symbol": symbol,
++        "overall_sentiment": round(overall, 3),
++        "label": label,
++        "items": scored,
++    }
+diff --git a/v2_backend/services/prediction.py b/v2_backend/services/prediction.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..c8ba8f81e46feb85edc900c0410c20b8d32736ed
+--- /dev/null
++++ b/v2_backend/services/prediction.py
+@@ -0,0 +1,49 @@
++from typing import Dict, List
++import numpy as np
++
++
++def _rsi(prices: List[float], window: int = 14) -> float:
++    arr = np.array(prices, dtype=float)
++    deltas = np.diff(arr)
++    gains = np.clip(deltas, 0, None)
++    losses = -np.clip(deltas, None, 0)
++    avg_gain = gains[-window:].mean() if len(gains) >= window else gains.mean() if len(gains) else 0
++    avg_loss = losses[-window:].mean() if len(losses) >= window else losses.mean() if len(losses) else 1e-8
++    rs = avg_gain / (avg_loss + 1e-8)
++    return 100 - (100 / (1 + rs))
++
++
++def explainable_signal(prices: List[float]) -> Dict:
++    arr = np.array(prices, dtype=float)
++    ret_1 = (arr[-1] / arr[-2]) - 1
++    ret_5 = (arr[-1] / arr[-6]) - 1 if len(arr) > 6 else ret_1
++    ma_10 = arr[-10:].mean()
++    ma_30 = arr[-30:].mean()
++    momentum = ret_5
++    trend = (ma_10 / ma_30) - 1
++    volatility = np.std(np.diff(arr[-20:]) / arr[-21:-1]) if len(arr) > 21 else 0.01
++    rsi = _rsi(prices)
++
++    score = 0.45 * trend + 0.35 * momentum + 0.15 * (ret_1) - 0.25 * volatility + 0.05 * ((rsi - 50) / 50)
++
++    buy_p = float(np.clip(0.5 + score, 0.01, 0.98))
++    sell_p = float(np.clip(0.5 - score, 0.01, 0.98))
++    hold_p = float(np.clip(1 - max(buy_p, sell_p), 0.01, 0.7))
++    total = buy_p + sell_p + hold_p
++    probs = {"BUY": buy_p / total, "HOLD": hold_p / total, "SELL": sell_p / total}
++
++    signal = max(probs, key=probs.get)
++    confidence = probs[signal]
++    contributions = {
++        "trend_ma10_vs_ma30": round(0.45 * trend, 4),
++        "momentum_5d": round(0.35 * momentum, 4),
++        "return_1d": round(0.15 * ret_1, 4),
++        "volatility_penalty": round(-0.25 * volatility, 4),
++        "rsi_bias": round(0.05 * ((rsi - 50) / 50), 4),
++    }
++    return {
++        "signal": signal,
++        "confidence": float(round(confidence, 4)),
++        "probabilities": {k: float(round(v, 4)) for k, v in probs.items()},
++        "contributions": contributions,
++    }
+diff --git a/v2_backend/services/price_stream.py b/v2_backend/services/price_stream.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f1b66292530a9ac51c4f4f6ef833976348493e01
+--- /dev/null
++++ b/v2_backend/services/price_stream.py
+@@ -0,0 +1,21 @@
++import random
++from datetime import datetime
++
++
++class PriceSimulator:
++    def __init__(self):
++        self.last_prices = {}
++
++    def next_price(self, symbol: str) -> dict:
++        base = self.last_prices.get(symbol, random.uniform(50, 250))
++        move = random.uniform(-1.5, 1.5)
++        price = max(1.0, base + move)
++        self.last_prices[symbol] = price
++        return {
++            "symbol": symbol,
++            "price": round(price, 2),
++            "timestamp": datetime.utcnow().isoformat() + "Z",
++        }
++
++
++simulator = PriceSimulator()
+diff --git a/v2_backend/services/risk.py b/v2_backend/services/risk.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..bc365a1367a3e24f15fb265d54c0345a63d77a55
+--- /dev/null
++++ b/v2_backend/services/risk.py
+@@ -0,0 +1,25 @@
++from typing import Dict, List
++import numpy as np
++
++
++def portfolio_risk(returns: List[float], market_returns: List[float], holdings: Dict[str, float], sectors: Dict[str, str]):
++    r = np.array(returns, dtype=float)
++    m = np.array(market_returns, dtype=float)
++    min_len = min(len(r), len(m))
++    r, m = r[-min_len:], m[-min_len:]
++
++    var_95 = float(np.percentile(r, 5))
++    cov = np.cov(r, m)
++    beta = float(cov[0, 1] / cov[1, 1]) if cov[1, 1] != 0 else 0.0
++
++    total = sum(holdings.values()) or 1.0
++    sector_exposure = {}
++    for symbol, value in holdings.items():
++        sector = sectors.get(symbol, "Unknown")
++        sector_exposure[sector] = sector_exposure.get(sector, 0) + value / total
++
++    return {
++        "var_95": round(var_95, 4),
++        "beta": round(beta, 4),
++        "sector_exposure": {k: round(v, 4) for k, v in sector_exposure.items()},
++    }
+diff --git a/v2_backend/services/store.py b/v2_backend/services/store.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f54bf7c8267e3d1ec638ae3759dcb9bdd1b0b938
+--- /dev/null
++++ b/v2_backend/services/store.py
+@@ -0,0 +1,25 @@
++from collections import defaultdict
++from dataclasses import dataclass
++from typing import Dict, List
++
++
++@dataclass
++class AuditEvent:
++    org_id: str
++    actor: str
++    action: str
++    details: dict
++
++
++class InMemoryStore:
++    def __init__(self):
++        self.teams: Dict[str, dict] = {}
++        self.audit_logs: Dict[str, List[AuditEvent]] = defaultdict(list)
++        self.paper_positions: Dict[str, Dict[str, dict]] = defaultdict(dict)
++        self.alerts: List[dict] = []
++
++    def add_audit(self, org_id: str, actor: str, action: str, details: dict):
++        self.audit_logs[org_id].append(AuditEvent(org_id, actor, action, details))
++
++
++store = InMemoryStore()
+diff --git a/v2_backend/services/strategy.py b/v2_backend/services/strategy.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..c91a2e0cb8f7f270f9930ec2de0eaf87d715603f
+--- /dev/null
++++ b/v2_backend/services/strategy.py
+@@ -0,0 +1,45 @@
++from typing import List
++import numpy as np
++
++
++def walk_forward_report(
++    prices: List[float], short_window: int, long_window: int, train_window: int, test_window: int
++):
++    arr = np.array(prices, dtype=float)
++    returns = []
++    peak = 1.0
++    equity = 1.0
++    drawdowns = []
++    splits = 0
++
++    start = train_window
++    while start + test_window <= len(arr):
++        test_slice = arr[start : start + test_window]
++        signals = []
++        for i in range(long_window, len(test_slice)):
++            short_ma = test_slice[i - short_window : i].mean()
++            long_ma = test_slice[i - long_window : i].mean()
++            signals.append(1 if short_ma > long_ma else -1)
++
++        for i, sig in enumerate(signals, start=long_window):
++            r = (test_slice[i] / test_slice[i - 1]) - 1
++            strat_r = sig * r
++            returns.append(strat_r)
++            equity *= 1 + strat_r
++            peak = max(peak, equity)
++            drawdowns.append((equity - peak) / peak)
++
++        splits += 1
++        start += test_window
++
++    total_return = equity - 1
++    vol = np.std(returns) if returns else 0
++    sharpe = (np.mean(returns) / vol * np.sqrt(252)) if vol > 0 else 0
++    max_dd = min(drawdowns) if drawdowns else 0
++
++    return {
++        "total_return": float(round(total_return, 4)),
++        "sharpe": float(round(sharpe, 4)),
++        "max_drawdown": float(round(max_dd, 4)),
++        "walk_forward_splits": splits,
++    }
