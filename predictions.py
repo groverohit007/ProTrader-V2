@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from v2_backend.schemas import PredictionRequest, PredictionResponse
-from v2_backend.services.prediction import explainable_signal
+from schemas import PredictionRequest, PredictionResponse
+from prediction import explainable_signal
 
 router = APIRouter(prefix="/predictions", tags=["predictions"])
 
